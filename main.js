@@ -11,27 +11,32 @@ const formatDate = (dateString, complete = false) => {
   return `${day}-${month}-${year}` + (complete ? ` - ${hours}:${minutes}` : '');
 };
 
-const getLatestUpdates = async (dependencies, updates) => {
+const getLatestUpdates = async (dependencies, updates, fetchPromises = []) => {  
   for (const [packageName, version] of Object.entries(dependencies)) {
     if (!updates[packageName]) {
-      try {
-        const response = await fetch(`https://registry.npmjs.org/${packageName}`);
-        if (!response.ok) throw new Error(`Failed to fetch ${packageName}`);
-        
-        const { 'dist-tags': { latest: latestVersion }, time, versions } = await response.json();
-        const lastUpdated = time[latestVersion];
-        const exactVersion = version.replace('^', '')
-        // const { dependencies: nestedDeps, devDependencies: nestedDevDeps } = versions[exactVersion] || {};
-        // const nestedDependencies = { ...(nestedDeps || {}), ...(nestedDevDeps || {}) };
-
-        updates[packageName] = { currentVersion: version, latestVersion, lastUpdated, updatable: exactVersion === latestVersion ? 'NO' : 'YES'  };    
-        // if (Object.keys(nestedDependencies).length) await getLatestUpdates(nestedDependencies, updates);
-      } catch (error) {
-        console.error(`Error fetching ${packageName}: ${error.message}`);
-        updates[packageName] = { currentVersion: version, latestVersion: 'N/A', lastUpdated: 'N/A', updatable: 'N/A' };
-      }
+      console.info('Processing', packageName);
+      fetchPromises.push(
+        fetch(`https://registry.npmjs.org/${packageName}`)
+          .then(response => {
+            if (!response.ok) throw new Error(`Failed to fetch ${packageName}`);
+            return response.json();
+          })
+          .then(({ 'dist-tags': { latest: latestVersion }, time, versions }) => {
+            const lastUpdated = time[latestVersion];
+            const exactVersion = version.replace('^', '');
+            // const { dependencies: nestedDeps, devDependencies: nestedDevDeps } = versions[exactVersion] || {};
+            // const nestedDependencies = { ...(nestedDeps || {}), ...(nestedDevDeps || {}) };
+            updates[packageName] = { currentVersion: version, latestVersion, lastUpdated, updatable: exactVersion === latestVersion ? 'NO' : 'YES'  };    
+            // if (Object.keys(nestedDependencies).length) return getLatestUpdates(nestedDependencies, updates, fetchPromises);
+          })
+          .catch(error => {
+            console.error(`Error fetching ${packageName}: ${error.message}`);
+            updates[packageName] = { currentVersion: version, latestVersion: 'N/A', lastUpdated: 'N/A', updatable: 'N/A' };
+          })
+      );
     }
   }
+  await Promise.all(fetchPromises);
   return updates;
 };
 
@@ -50,9 +55,8 @@ const processPackages = async input => {
     const dependencies = { ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {}) };
     const updates = await getLatestUpdates(dependencies, {});
     const updatedOnDate = getUpdates(updates, input, input === 'all');
-
-    if (updatedOnDate.length) updatedOnDate.forEach((packageInfo, index) => console.table(`${index + 1}. ${packageInfo}`));
-    else console.table(`No packages updated on ${formatDate(input)}.`);
+    if (updatedOnDate.length) updatedOnDate.forEach((packageInfo, index) => console.info(`${index + 1}. ${packageInfo}`));
+    else console.info(`No packages updated on ${formatDate(input)}.`);
   } catch (error) {
     console.error('An error occurred:', error);
   }
@@ -61,19 +65,16 @@ const processPackages = async input => {
 const main = () => {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const question = "Enter the date (DD-MM-YYYY), press Enter to get all packages updates: ";
-  
   rl.question(question, async dateInput => {
     rl.close();
     const today = new Date();
     const dateRegex = /^\d{2}-\d{2}-\d{4}$/;
-
     if (!dateInput) await processPackages('all');
-    else if (!dateRegex.test(dateInput)) console.table('Invalid date format. Please enter a valid date (DD-MM-YYYY).');
+    else if (!dateRegex.test(dateInput)) console.info('Invalid date format. Please enter a valid date (DD-MM-YYYY).');
     else {
       const [day, month, year] = dateInput.split('-').map(Number);
       const chosenDate = new Date(year, month - 1, day);
-
-      if (chosenDate.getTime() > today.getTime()) console.table('Invalid date. Please enter a date in the past or today.');
+      if (chosenDate.getTime() > today.getTime()) console.info('Invalid date. Please enter a date in the past or today.');
       else await processPackages(chosenDate);
     }
   });
