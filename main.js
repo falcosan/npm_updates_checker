@@ -18,17 +18,17 @@ const getLatestUpdates = async (dependencies, updates) => {
         const response = await fetch(`https://registry.npmjs.org/${packageName}`);
         if (!response.ok) throw new Error(`Failed to fetch ${packageName}`);
         
-        const packageInfo = await response.json();
-        const { 'dist-tags': { latest }, time } = packageInfo;
-        const lastUpdated = time[latest];
-        // const { dependencies: nestedDeps, devDependencies: nestedDevDeps } = packageInfo.versions[version.replace('^', '')] || {};
+        const { 'dist-tags': { latest: latestVersion }, time, versions } = await response.json();
+        const lastUpdated = time[latestVersion];
+        const exactVersion = version.replace('^', '')
+        // const { dependencies: nestedDeps, devDependencies: nestedDevDeps } = versions[exactVersion] || {};
         // const nestedDependencies = { ...(nestedDeps || {}), ...(nestedDevDeps || {}) };
 
-        updates[packageName] = { currentVersion: version, latestVersion: latest, lastUpdated };    
+        updates[packageName] = { currentVersion: version, latestVersion, lastUpdated, updatable: exactVersion === latestVersion ? 'NO' : 'YES'  };    
         // if (Object.keys(nestedDependencies).length) await getLatestUpdates(nestedDependencies, updates);
       } catch (error) {
         console.error(`Error fetching ${packageName}: ${error.message}`);
-        updates[packageName] = { currentVersion: version, latestVersion: 'N/A', lastUpdated: 'N/A' };
+        updates[packageName] = { currentVersion: version, latestVersion: 'N/A', lastUpdated: 'N/A', updatable: 'N/A' };
       }
     }
   }
@@ -39,7 +39,7 @@ const getLatestUpdates = async (dependencies, updates) => {
 const getUpdates = (updates, date, considerAllDates = false) => {
   return Object.entries(updates).reduce((updatedOnDate, [packageName, updateInfo]) => {
     if (considerAllDates || formatDate(updateInfo.lastUpdated) === formatDate(date.toISOString())) {
-      updatedOnDate.push(`${packageName}: ${updateInfo.currentVersion} -> ${updateInfo.latestVersion} | ${formatDate(updateInfo.lastUpdated, true)}`);
+      updatedOnDate.push(`${packageName}: ${updateInfo.currentVersion} -> ${updateInfo.latestVersion} | ${formatDate(updateInfo.lastUpdated, true)} | ${updateInfo.updatable}`);
     }
     return updatedOnDate;
   }, []);
